@@ -23,6 +23,7 @@
    LAYOUT: zentrierter Kopf mit Logo, Suche, Hero + Radar, Stundenleiste, 7-Tage-Liste */
 :root{color-scheme:dark;--bg:#0c0a0b;--card:#17141a;--ink:#fff;--mute:#c9c6c7;--line:#2e2a2c;--acc:#c8141e;--acc2:#e31e26;--rain:#5ac8f0;--warn:#d97706}
 *{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 Roboto,system-ui,sans-serif;overflow-x:clip}
 .wrap{max-width:1180px;margin:0 auto;padding:0 max(4vw,14px,env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(4vw,14px,env(safe-area-inset-left))}
 .head{text-align:center;padding:calc(22px + env(safe-area-inset-top)) 16px 14px}
@@ -65,8 +66,13 @@ button:focus-visible,input:focus-visible{outline:3px solid #ff5a60;outline-offse
 .range button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:#fff}
 .ctl{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--line)}
 .ctl input[type=range]{flex:1 1 160px;padding:0;border:0;background:none;accent-color:var(--acc);min-height:30px}
-#ts{font-weight:700;white-space:nowrap;min-width:9.5em;font-variant-numeric:tabular-nums}
-#ts.fc{color:#ff8a8e}
+.tsw{display:flex;flex-direction:column;line-height:1.25;min-width:9.5em}
+#ts{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.kind{font-size:13px;color:var(--mute);white-space:nowrap}.kind.nowcast{color:#ff8a8e}.kind.model{color:#f5b041}
+.rl{font-size:13px;color:var(--mute);align-self:center;margin-right:2px}
+.mseg{display:flex;flex:1;gap:1px}.mseg b{flex:1;font-size:11px;font-weight:500;text-align:center;color:#222;border-radius:2px;padding:1px 0}
+.lm{white-space:nowrap}
+.rnote{font-size:12px;color:var(--mute);margin:0;padding:0 16px 12px}
 .legend{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute);padding:0 16px 12px}
 .legend i{display:inline-block;height:8px;flex:1;border-radius:4px;background:linear-gradient(90deg,#a0f0ff,#00d2e6,#00b400,#007800,#ffff00,#ff9b00,#ff0000,#c800c8)}
 h2{font-size:18px;font-weight:700;margin:26px 0 10px}
@@ -104,15 +110,17 @@ footer{margin-top:28px;font-size:13px;color:var(--mute);text-align:center}footer
   <section class="card radar">
    <div class="rhead"><h2>Regenradar</h2><span>Deutscher Wetterdienst</span></div>
    <div id="map"></div>
-   <div class="range" id="range" role="group" aria-label="Zeitraum">
-    <button type="button" data-h="1">1 Std.</button><button type="button" data-h="3">3 Std.</button><button type="button" data-h="6">6 Std.</button><button type="button" data-h="12">12 Std.</button><button type="button" data-h="24">24 Std.</button>
+   <div class="range" id="range" role="group" aria-label="Vorschau">
+    <span class="rl">Vorschau</span><button type="button" data-h="2">2 Std.</button><button type="button" data-h="6">6 Std.</button><button type="button" data-h="12">12 Std.</button><button type="button" data-h="24">24 Std.</button><button type="button" data-h="48">2 Tage</button>
    </div>
    <div class="ctl">
     <button id="play" class="pri" aria-label="Animation starten oder anhalten">Pause</button>
     <input type="range" id="sl" min="0" max="0" value="0" aria-label="Zeitpunkt">
-    <span id="ts">Lade Radar …</span>
+    <span class="tsw"><span id="ts">Lade Radar …</span><span id="kind" class="kind"></span></span>
    </div>
-   <div class="legend">schwach <i></i> stark</div>
+   <div class="legend" id="lgR">schwach <i></i> stark</div>
+   <div class="legend" id="lgM" hidden><span class="lm">mm/h</span><span class="mseg"><b style="background:#c0c0c0">0,1</b><b style="background:#ffffa8">2</b><b style="background:#e6ff00;color:#222">5</b><b style="background:#8fd630">10</b><b style="background:#30c850">20</b><b style="background:#00d2d2">25</b><b style="background:#0096e1">30</b><b style="background:#0000ff;color:#fff">40</b><b style="background:#9632c8;color:#fff">60</b><b style="background:#ff0000;color:#fff">100</b></span></div>
+   <p class="rnote">Bis 2 Stunden: Radar-Hochrechnung des DWD. Danach: Wettermodell ICON-EU (Niederschlag pro Stunde), gröber und weniger genau.</p>
   </section>
  </div>
 
@@ -278,49 +286,68 @@ function parseTimes(xml) {
  return out.filter(isFinite).sort((a, b) => a - b);
 }
 
-/* Zeitraum: Rückblick in Stunden -> Bildabstand in Minuten (max. ca. 25 Bilder) */
-const STEP = {1:5, 3:10, 6:15, 12:30, 24:60};
-let rangeH = 1;
-try { const v = +localStorage.getItem('wetter-radar-h'); if (STEP[v]) rangeH = v; } catch (e) {}
-const pickPast = (times, now) => {
- const step = STEP[rangeH] * 6e4, from = now - rangeH * 36e5;
- const past = times.filter(x => x <= now && x >= from - 1);
- const last = past[past.length - 1];
- return last == null ? [] : past.filter(x => (last - x) % step === 0);
+/* Vorschau-Zeitraum in Stunden. Bis +2 Std. Radar-Prognose (Nowcast), danach Modellprognose ICON-EU (1-Std.-Niederschlag) */
+const MODEL = 'dwd:Icon-eu_reg00625_fd_sl_TOTPREC01H';
+const PLAN = {        // Rückblick-Schritt, Nowcast-Schritt, Modell-Schritt (Minuten)
+ 2:  {past:5,  now:10},
+ 6:  {past:15, now:15, model:60},
+ 12: {past:15, now:30, model:60},
+ 24: {past:15, now:30, model:60},
+ 48: {past:15, now:60, model:120}
 };
-async function radarTimes() {
- const now = Date.now();
+let rangeH = 2;
+try { const v = +localStorage.getItem('wetter-radar-vorschau'); if (PLAN[v]) rangeH = v; } catch (e) {}
+const H = 36e5, M = 6e4;
+async function capsTimes(layer) {
+ const ac = new AbortController(), to = setTimeout(() => ac.abort(), 6000);
  try {
-  const ac = new AbortController(), to = setTimeout(() => ac.abort(), 6000);
-  const r = await fetch(`https://maps.dwd.de/geoserver/dwd/Niederschlagsradar/wms?service=WMS&version=1.3.0&request=GetCapabilities`, {signal:ac.signal});
-  clearTimeout(to);
-  const t = r.ok && parseTimes(await r.text());
-  if (t && t.length) {
-   const past = pickPast(t, now);                                    // Rückblick laut Auswahl
-   const fut = t.filter(x => x > now).filter((x, i) => i % 3 === 2).slice(0, 8); // Prognose, 15-min-Schritte
-   if (past.length) return {list:[...past, ...fut], nowIdx:past.length - 1};
-  }
- } catch (e) { console.warn('Radar-Zeiten per Fallback', e); }
- const last = Math.floor((now - 10 * 6e4) / 3e5) * 3e5, list = [];
- const step = STEP[rangeH] * 6e4, n = Math.round(rangeH * 36e5 / step);
- for (let i = n; i >= 0; i--) list.push(last - i * step);
- return {list, nowIdx:list.length - 1};
+  const r = await fetch(`https://maps.dwd.de/geoserver/dwd/${layer}/wms?service=WMS&version=1.3.0&request=GetCapabilities`, {signal:ac.signal});
+  return r.ok ? parseTimes(await r.text()) : null;
+ } catch (e) { console.warn('Zeitliste nicht geladen:', layer, e); return null; }
+ finally { clearTimeout(to); }
+}
+const every = (list, stepMin, anchor) => list.filter(x => Math.round((x - anchor) / M) % stepMin === 0);
+async function radarTimes() {
+ const now = Date.now(), plan = PLAN[rangeH];
+ const [rt, mt] = await Promise.all([capsTimes('Niederschlagsradar'), plan.model ? capsTimes('Icon-eu_reg00625_fd_sl_TOTPREC01H') : null]);
+ let radar = rt && rt.length ? rt : null;
+ if (!radar) { // Rückfall: 5-Minuten-Raster selbst berechnen
+  const last = Math.floor((now - 10 * M) / 3e5) * 3e5; radar = [];
+  for (let t = last - H; t <= last + 2 * H; t += 3e5) radar.push(t);
+ }
+ const pastAll = radar.filter(x => x <= now), anchor = pastAll[pastAll.length - 1] ?? now;
+ const past = every(pastAll.filter(x => x >= anchor - 30 * M), plan.past, anchor).map(t => ({t, kind:'radar'}));
+ const nowEnd = Math.min(anchor + 2 * H, now + rangeH * H);
+ const fut = every(radar.filter(x => x > anchor && x <= nowEnd), plan.now, anchor).map(t => ({t, kind:'nowcast'}));
+ let model = [];
+ if (plan.model) {
+  const end = now + rangeH * H, startM = (fut.length ? fut[fut.length - 1].t : anchor) + 30 * M;
+  let mts = mt && mt.length ? mt : [];
+  if (!mts.length) for (let t = Math.ceil(now / H) * H; t <= end; t += H) mts.push(t);
+  const first = mts.find(x => x >= startM);
+  model = first == null ? [] : every(mts.filter(x => x >= first && x <= end), plan.model, first).map(t => ({t, kind:'model'}));
+ }
+ const list = [...past, ...fut, ...model];
+ return {list, nowIdx:Math.max(0, past.length - 1)};
 }
 
+const KIND = {radar:'Radar', nowcast:'Radar-Prognose', model:'Modellprognose'};
 function show(i) {
  if (!layers.length) return;
  layers[idx]?.setOpacity(0);
  idx = (i + layers.length) % layers.length;
- layers[idx].setOpacity(0.8);
+ const f = frames[idx];
+ layers[idx].setOpacity(f.kind === 'model' ? 0.7 : 0.8);
  $('sl').value = idx;
- const fc = idx > nowIdx;
- const d = new Date(frames[idx]);
- $('ts').textContent = (dayKey(d) !== dayKey(new Date()) ? df.format(d).replace(/^\w+\.,? ?/, '') + ' ' : '') + tf.format(d) + ' Uhr' + (fc ? ' · Prognose' : '');
- $('ts').className = fc ? 'fc' : '';
+ const d = new Date(f.t);
+ $('ts').textContent = (dayKey(d) !== dayKey(new Date()) ? df.format(d) + ' ' : '') + tf.format(d) + ' Uhr';
+ $('kind').textContent = KIND[f.kind];
+ $('kind').className = 'kind ' + f.kind;
+ $('lgR').hidden = f.kind === 'model'; $('lgM').hidden = f.kind !== 'model';
 }
 function play(on) {
  clearInterval(timer); timer = null;
- if (on && layers.length > 1) timer = setInterval(() => show(idx + 1), 650);
+ if (on && layers.length > 1) timer = setInterval(() => show(idx + 1), 700);
  $('play').textContent = timer ? 'Pause' : 'Abspielen';
 }
 let radarAgain = false;
@@ -333,9 +360,9 @@ async function initRadar(force) {
   play(false);
   layers.forEach(l => map.removeLayer(l));
   frames = t.list; nowIdx = t.nowIdx; idx = 0;
-  layers = frames.map(ts => L.tileLayer.wms(WMS, {
-   layers:LAYER, format:'image/png', transparent:true, version:'1.3.0', opacity:0,
-   time:new Date(ts).toISOString().replace('.000', ''), attribution:'Radar © DWD', zIndex:5
+  layers = frames.map(f => L.tileLayer.wms(WMS, {
+   layers:f.kind === 'model' ? MODEL : LAYER, format:'image/png', transparent:true, version:'1.3.0', opacity:0,
+   time:new Date(f.t).toISOString().replace('.000', ''), attribution:'Radar und ICON-EU © DWD', zIndex:5
   }).addTo(map));
   $('sl').max = layers.length - 1;
   show(nowIdx);
@@ -349,7 +376,7 @@ markRange();
 $('range').addEventListener('click', e => {
  const b = e.target.closest('button[data-h]'); if (!b || +b.dataset.h === rangeH) return;
  rangeH = +b.dataset.h; markRange();
- try { localStorage.setItem('wetter-radar-h', rangeH); } catch (err) {}
+ try { localStorage.setItem('wetter-radar-vorschau', rangeH); } catch (err) {}
  $('ts').textContent = 'Lade Radar …';
  initRadar(true);
 });
