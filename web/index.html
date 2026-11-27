@@ -299,7 +299,7 @@ let rangeH = 2;
 try { const v = +localStorage.getItem('wetter-radar-vorschau'); if (PLAN[v]) rangeH = v; } catch (e) {}
 const H = 36e5, M = 6e4;
 async function capsTimes(layer) {
- const ac = new AbortController(), to = setTimeout(() => ac.abort(), 6000);
+ const ac = new AbortController(), to = setTimeout(() => ac.abort(), 8000);
  try {
   const r = await fetch(`https://maps.dwd.de/geoserver/dwd/${layer}/wms?service=WMS&version=1.3.0&request=GetCapabilities`, {signal:ac.signal});
   return r.ok ? parseTimes(await r.text()) : null;
@@ -309,7 +309,7 @@ async function capsTimes(layer) {
 const every = (list, stepMin, anchor) => list.filter(x => Math.round((x - anchor) / M) % stepMin === 0);
 async function radarTimes() {
  const now = Date.now(), plan = PLAN[rangeH];
- const [rt, mt] = await Promise.all([capsTimes('Niederschlagsradar'), plan.model ? capsTimes('Icon-eu_reg00625_fd_sl_TOTPREC01H') : null]);
+ const rt = await capsTimes('Niederschlagsradar');
  let radar = rt && rt.length ? rt : null;
  if (!radar) { // Rückfall: 5-Minuten-Raster selbst berechnen
   const last = Math.floor((now - 10 * M) / 3e5) * 3e5; radar = [];
@@ -322,8 +322,8 @@ async function radarTimes() {
  let model = [];
  if (plan.model) {
   const end = now + rangeH * H, startM = (fut.length ? fut[fut.length - 1].t : anchor) + 30 * M;
-  let mts = mt && mt.length ? mt : [];
-  if (!mts.length) for (let t = Math.ceil(now / H) * H; t <= end; t += H) mts.push(t);
+  const mts = [];
+  for (let t = Math.ceil(now / H) * H; t <= end; t += H) mts.push(t);
   const first = mts.find(x => x >= startM);
   model = first == null ? [] : every(mts.filter(x => x >= first && x <= end), plan.model, first).map(t => ({t, kind:'model'}));
  }
@@ -331,6 +331,8 @@ async function radarTimes() {
  return {list, nowIdx:Math.max(0, past.length - 1)};
 }
 
+const MBOUNDS = L.latLngBounds([45.5, 3.5], [56.5, 17.5]);
+const MB = (() => { const a = L.CRS.EPSG3857.project(MBOUNDS.getSouthWest()), b = L.CRS.EPSG3857.project(MBOUNDS.getNorthEast()); return [a.x, a.y, b.x, b.y].map(v => v.toFixed(0)); })();
 const KIND = {radar:'Radar', nowcast:'Radar-Prognose', model:'Modellprognose'};
 function show(i) {
  if (!layers.length) return;
@@ -360,10 +362,13 @@ async function initRadar(force) {
   play(false);
   layers.forEach(l => map.removeLayer(l));
   frames = t.list; nowIdx = t.nowIdx; idx = 0;
-  layers = frames.map(f => L.tileLayer.wms(WMS, {
-   layers:f.kind === 'model' ? MODEL : LAYER, format:'image/png', transparent:true, version:'1.3.0', opacity:0,
-   time:new Date(f.t).toISOString().replace('.000', ''), attribution:'Radar und ICON-EU © DWD', zIndex:5
-  }).addTo(map));
+  layers = frames.map(f => {
+   const time = new Date(f.t).toISOString().replace('.000', '');
+   if (f.kind === 'model') // Modell: ein Bild für ganz Deutschland (grobes Raster, keine Kachelkanten)
+    return L.imageOverlay(`${WMS}?service=WMS&version=1.3.0&request=GetMap&layers=${MODEL}&styles=&format=image/png&transparent=true&crs=EPSG:3857&bbox=${MB.join(',')}&width=900&height=1100&time=${time}`,
+     MBOUNDS, {opacity:0, zIndex:5, attribution:'ICON-EU © DWD'}).addTo(map);
+   return L.tileLayer.wms(WMS, {layers:LAYER, format:'image/png', transparent:true, version:'1.3.0', opacity:0, time, attribution:'Radar © DWD', zIndex:5}).addTo(map);
+  });
   $('sl').max = layers.length - 1;
   show(nowIdx);
   lastRadar = Date.now();
