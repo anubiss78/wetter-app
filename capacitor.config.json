@@ -1,0 +1,13 @@
+{
+  "appId": "de.rmitonline.wetter",
+  "appName": "Wetter",
+  "webDir": "web",
+  "server": {
+    "url": "https://OWNER.github.io/REPO/",
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "backgroundColor": "#0b1726"
+  }
+}
