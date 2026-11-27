@@ -1,5 +1,5 @@
 // Service Worker: App-Hülle offline verfügbar, Wetterdaten immer frisch aus dem Netz.
-const CACHE = 'wetter-v1';
+const CACHE = 'wetter-v2';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',

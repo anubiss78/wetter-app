@@ -2,6 +2,7 @@ name: Android-App bauen
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths: ["capacitor.config.json", "package.json", "assets/**", ".github/workflows/android.yml"]
 permissions:
   contents: write
