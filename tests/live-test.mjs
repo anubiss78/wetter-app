@@ -25,7 +25,10 @@ for (const h of ['2', '6', '12', '24', '48']) {
 await page.evaluate(() => document.querySelector('.leaflet-control-zoom-out').click()); await page.waitForTimeout(800);
 await page.evaluate(() => document.querySelector('.leaflet-control-zoom-out').click()); await page.waitForTimeout(3000);
 // Modellbild anzeigen und Radarbereich fotografieren
-await page.evaluate(() => { const sl = document.getElementById('sl'); sl.value = Math.round(sl.max * 0.6); sl.dispatchEvent(new Event('input')); });
+await page.click('#range button[data-h="6"]'); await page.waitForTimeout(12000);
+await page.evaluate(() => { document.getElementById('play').click(); const sl = document.getElementById('sl'); sl.value = 10; sl.dispatchEvent(new Event('input')); });
+await page.evaluate(() => document.querySelector('.leaflet-control-zoom-out').click()); await page.waitForTimeout(800);
+await page.evaluate(() => document.querySelector('.leaflet-control-zoom-out').click());
 await page.waitForTimeout(4000);
 await page.locator('.radar').screenshot({ path: 'shots/radar-modell.png' });
 await page.evaluate(() => { const sl = document.getElementById('sl'); sl.value = 3; sl.dispatchEvent(new Event('input')); });
