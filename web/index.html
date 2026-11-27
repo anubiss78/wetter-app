@@ -60,6 +60,9 @@ button:focus-visible,input:focus-visible{outline:3px solid #ff5a60;outline-offse
 .basemap{filter:invert(1) hue-rotate(180deg) brightness(.8) contrast(.95) saturate(.35)}
 .leaflet-control-attribution{background:rgba(12,10,11,.75)!important;color:#aaa!important}.leaflet-control-attribution a{color:#ddd!important}
 .leaflet-bar a{background:var(--card)!important;color:#fff!important;border-color:var(--line)!important}
+.range{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0}
+.range button{min-height:36px;padding:0 12px;font-size:14px;border-color:var(--line);background:var(--card)}
+.range button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:#fff}
 .ctl{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--line)}
 .ctl input[type=range]{flex:1 1 160px;padding:0;border:0;background:none;accent-color:var(--acc);min-height:30px}
 #ts{font-weight:700;white-space:nowrap;min-width:9.5em;font-variant-numeric:tabular-nums}
@@ -101,6 +104,9 @@ footer{margin-top:28px;font-size:13px;color:var(--mute);text-align:center}footer
   <section class="card radar">
    <div class="rhead"><h2>Regenradar</h2><span>Deutscher Wetterdienst</span></div>
    <div id="map"></div>
+   <div class="range" id="range" role="group" aria-label="Zeitraum">
+    <button type="button" data-h="1">1 Std.</button><button type="button" data-h="3">3 Std.</button><button type="button" data-h="6">6 Std.</button><button type="button" data-h="12">12 Std.</button><button type="button" data-h="24">24 Std.</button>
+   </div>
    <div class="ctl">
     <button id="play" class="pri" aria-label="Animation starten oder anhalten">Pause</button>
     <input type="range" id="sl" min="0" max="0" value="0" aria-label="Zeitpunkt">
@@ -266,12 +272,22 @@ function parseTimes(xml) {
   if (p.length === 3) {
    const a = Date.parse(p[0]), b = Date.parse(p[1]), d = p[2].match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
    const step = d ? ((+d[1] || 0) * 60 + (+d[2] || 0)) * 6e4 : 3e5;
-   if (step > 0) for (let t = Math.max(a, b - 60 * step); t <= b; t += step) out.push(t);
+   if (step > 0) for (let t = Math.max(a, b - 400 * step); t <= b; t += step) out.push(t);
   } else if (p[0]) out.push(Date.parse(p[0]));
  }
  return out.filter(isFinite).sort((a, b) => a - b);
 }
 
+/* Zeitraum: Rückblick in Stunden -> Bildabstand in Minuten (max. ca. 25 Bilder) */
+const STEP = {1:5, 3:10, 6:15, 12:30, 24:60};
+let rangeH = 1;
+try { const v = +localStorage.getItem('wetter-radar-h'); if (STEP[v]) rangeH = v; } catch (e) {}
+const pickPast = (times, now) => {
+ const step = STEP[rangeH] * 6e4, from = now - rangeH * 36e5;
+ const past = times.filter(x => x <= now && x >= from - 1);
+ const last = past[past.length - 1];
+ return last == null ? [] : past.filter(x => (last - x) % step === 0);
+};
 async function radarTimes() {
  const now = Date.now();
  try {
@@ -280,13 +296,14 @@ async function radarTimes() {
   clearTimeout(to);
   const t = r.ok && parseTimes(await r.text());
   if (t && t.length) {
-   const past = t.filter(x => x <= now).slice(-13);                 // letzte Stunde, 5-min-Schritte
+   const past = pickPast(t, now);                                    // Rückblick laut Auswahl
    const fut = t.filter(x => x > now).filter((x, i) => i % 3 === 2).slice(0, 8); // Prognose, 15-min-Schritte
    if (past.length) return {list:[...past, ...fut], nowIdx:past.length - 1};
   }
  } catch (e) { console.warn('Radar-Zeiten per Fallback', e); }
  const last = Math.floor((now - 10 * 6e4) / 3e5) * 3e5, list = [];
- for (let i = 12; i >= 0; i--) list.push(last - i * 3e5);
+ const step = STEP[rangeH] * 6e4, n = Math.round(rangeH * 36e5 / step);
+ for (let i = n; i >= 0; i--) list.push(last - i * step);
  return {list, nowIdx:list.length - 1};
 }
 
@@ -297,7 +314,8 @@ function show(i) {
  layers[idx].setOpacity(0.8);
  $('sl').value = idx;
  const fc = idx > nowIdx;
- $('ts').textContent = tf.format(new Date(frames[idx])) + ' Uhr' + (fc ? ' · Prognose' : '');
+ const d = new Date(frames[idx]);
+ $('ts').textContent = (dayKey(d) !== dayKey(new Date()) ? df.format(d).replace(/^\w+\.,? ?/, '') + ' ' : '') + tf.format(d) + ' Uhr' + (fc ? ' · Prognose' : '');
  $('ts').className = fc ? 'fc' : '';
 }
 function play(on) {
@@ -305,8 +323,9 @@ function play(on) {
  if (on && layers.length > 1) timer = setInterval(() => show(idx + 1), 650);
  $('play').textContent = timer ? 'Pause' : 'Abspielen';
 }
-async function initRadar() {
- if (radarBusy) return;
+let radarAgain = false;
+async function initRadar(force) {
+ if (radarBusy) { if (force) radarAgain = true; return; }
  radarBusy = true;
  try {
   const t = await radarTimes();
@@ -322,9 +341,18 @@ async function initRadar() {
   show(nowIdx);
   lastRadar = Date.now();
   if (wasPlaying && !matchMedia('(prefers-reduced-motion: reduce)').matches) play(true);
- } finally { radarBusy = false; }
+ } finally { radarBusy = false; if (radarAgain) { radarAgain = false; initRadar(); } }
 }
 $('play').onclick = () => play(!timer);
+const markRange = () => document.querySelectorAll('#range button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.h === rangeH));
+markRange();
+$('range').addEventListener('click', e => {
+ const b = e.target.closest('button[data-h]'); if (!b || +b.dataset.h === rangeH) return;
+ rangeH = +b.dataset.h; markRange();
+ try { localStorage.setItem('wetter-radar-h', rangeH); } catch (err) {}
+ $('ts').textContent = 'Lade Radar …';
+ initRadar(true);
+});
 $('sl').oninput = e => { play(false); show(+e.target.value); };
 
 /* ---------- Ortssuche (Name oder PLZ) ---------- */
