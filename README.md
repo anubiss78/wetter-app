@@ -6,3 +6,4 @@ Android-App (Capacitor) mit Wetter und Regenradar, Daten vom Deutschen Wetterdie
 - Aktuelles Wetter, DWD-Unwetterwarnungen und Vorhersage (MOSMIX) über [Bright Sky](https://brightsky.dev), Niederschlagsradar direkt vom [DWD GeoServer](https://maps.dwd.de).
 - Die APK steht unter Releases → „Wetter App“ → `Wetter.apk`.
 - Der zuletzt gewählte Ort liegt nur auf dem Handy (localStorage).
+- `signing/app.keystore` sorgt dafür, dass jede APK dieselbe Signatur hat. So lassen sich neue Versionen über die installierte App installieren.
